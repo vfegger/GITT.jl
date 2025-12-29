@@ -5,9 +5,12 @@ authors = ["vfegger <vitor.egger@gmail.com>"]
 
 [deps]
 DifferentialEquations = "0c46a032-eb83-5123-abaf-570d42b7fbaa"
+HCubature = "19dc6840-f33b-545b-b366-655c7e3ffd49"
 IntervalSets = "8197267c-284f-5f27-9208-e0e47529a953"
+JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 QuadGK = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
 Roots = "f2b01f46-fcfa-551c-844a-d8ac1e96c665"
 SymbolicUtils = "d1185830-fcd6-423d-90d6-eec64667417b"
@@ -19,9 +22,12 @@ Symbolics = {path = "/home/vfegger/.julia/dev/Symbolics"}
 
 [compat]
 DifferentialEquations = "7.17.0"
+HCubature = "1.8.0"
 IntervalSets = "0.7.12"
+JLD2 = "0.6.3"
 LinearAlgebra = "1.12.0"
 Plots = "1.41.1"
+ProgressMeter = "1.11.0"
 QuadGK = "2.11.2"
 Roots = "2.2.10"
 SymbolicUtils = "4.5.0"
