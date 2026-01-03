@@ -39,20 +39,20 @@ filter(t, x) = 1
 @showprogress desc = "Computing A..." Threads.@threads for i in 1:L
     for j in 1:L
         for k in 1:L
-            A[i, j, k] = 5 * (ψ_norm(i, 1) * ψ_norm(j, 1) * ψ_norm(k, 1) - quadgk(x -> Dψ_norm(i, x) * ψ_norm(j, x) * ψ_norm(k, x), 0, 1)[1])
+            A[i, j, k] = 5 * (ψ_norm(i, 1) * ψ_norm(j, 1) * ψ_norm(k, 1) - quadgk(x -> Dψ_norm(i, x) * ψ_norm(j, x) * ψ_norm(k, x), 0, 1; rtol=1e-3, atol=1e-8)[1])
         end
     end
 end
 @showprogress desc = "Computing B..." Threads.@threads for i in 1:L
     for j in 1:L
-        B[i, j] = (α(i)^2 + 1) * (i == j ? 1 : 0) + 11 * (ψ_norm(i, 1) * ψ_norm(j, 1) - quadgk(x -> Dψ_norm(i, x) * ψ_norm(j, x), 0, 1)[1])
+        B[i, j] = (α(i)^2 + 1) * (i == j ? 1 : 0) + 11 * (ψ_norm(i, 1) * ψ_norm(j, 1) - quadgk(x -> Dψ_norm(i, x) * ψ_norm(j, x), 0, 1; rtol=1e-3, atol=1e-8)[1])
     end
 end
 @showprogress desc = "Computing C..." Threads.@threads for i in 1:L
-    C[i] = quadgk(x -> ψ_norm(i, x) + 6 * Dψ_norm(i, x), 0, 1)[1] - 6 * ψ_norm(i, 1)
+    C[i] = quadgk(x -> ψ_norm(i, x) + 6 * Dψ_norm(i, x), 0, 1; rtol=1e-3, atol=1e-8)[1] - 6 * ψ_norm(i, 1)
 end
 @showprogress desc = "Computing Θ₀..." Threads.@threads for i in 1:L
-    Θ₀[i] = quadgk(x -> (x * (1 - x) - 1) * ψ_norm(i, x), 0, 1)[1]
+    Θ₀[i] = quadgk(x -> (x * (1 - x) - 1) * ψ_norm(i, x), 0, 1; rtol=1e-3, atol=1e-8)[1]
 end
 
 function mul2!(z, A, x, y; α=1.0, β=0.0)
@@ -61,7 +61,7 @@ function mul2!(z, A, x, y; α=1.0, β=0.0)
         aux = 0.0
         for j in 1:L
             for k in 1:L
-                aux += A[i, j, k] * x[j] * y[k]
+                @inbounds aux += A[i, j, k] * x[j] * y[k]
             end
         end
         @inbounds z[i] = α * aux + β * z[i]
