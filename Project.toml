@@ -16,10 +16,6 @@ Roots = "f2b01f46-fcfa-551c-844a-d8ac1e96c665"
 SymbolicUtils = "d1185830-fcd6-423d-90d6-eec64667417b"
 Symbolics = "0c5d862f-8b57-4792-8d23-62f2024744c7"
 
-[sources]
-SymbolicUtils = {path = "/home/vfegger/.julia/dev/SymbolicUtils"}
-Symbolics = {path = "/home/vfegger/.julia/dev/Symbolics"}
-
 [compat]
 DifferentialEquations = "7.17.0"
 HCubature = "1.8.0"
@@ -30,5 +26,5 @@ Plots = "1.41.1"
 ProgressMeter = "1.11.0"
 QuadGK = "2.11.2"
 Roots = "2.2.10"
-SymbolicUtils = "4.5.0"
-Symbolics = "7.0.1"
+SymbolicUtils = "4.10.0"
+Symbolics = "7.4.1"

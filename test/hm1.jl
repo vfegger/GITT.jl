@@ -19,8 +19,8 @@ C = Array{Float64}(undef, L)
 Θ₀ = Array{Float64}(undef, L)
 
 f = x -> tan(x) + x
-a = 1.001 * π / 2
-b = 0.999 * π / 2
+a = 1.0001 * π / 2
+b = 0.9999 * π / 2
 eigenvals = [find_zero(f, (a + π * (i - 1), b + π * i), Bisection()) for i in 1:L]
 display(eigenvals)
 α(i) = eigenvals[i]
@@ -30,8 +30,8 @@ Norms = [quadgk(x -> ψ(i, x)^2, 0, 1)[1] for i in 1:L]
 ψ_norm(i, x) = ψ(i, x) / sqrt(Norms[i])
 Dψ_norm(i, x) = Dψ(i, x) / sqrt(Norms[i])
 xs = range(0, 1, length=200)
-eigs = [ψ_norm(i, x) for x in xs, i in 1:10]
-plt_basis = plot(xs, eigs, xlabel="x", ylabel="ψ(x)", title="Eigenfunctions ψ(x)")
+eigs = [ψ_norm(i, x) for x in xs, i in 1:6]
+plt_basis = plot(xs, eigs, xlabel="x", ylabel="ψ(x)", label="", title="Eigenfunctions ψ(x)")
 savefig(plt_basis, "eigenfunctions.pdf")
 
 filter(t, x) = 1
@@ -49,7 +49,7 @@ end
     end
 end
 @showprogress desc = "Computing C..." Threads.@threads for i in 1:L
-    C[i] = quadgk(x -> ψ_norm(i, x) + 6 * Dψ_norm(i, x), 0, 1; rtol=1e-3, atol=1e-8)[1] - 6 * ψ_norm(i, 1)
+    C[i] = 6 * ψ_norm(i, 1) - quadgk(x -> 6 * Dψ_norm(i, x) - ψ_norm(i, x), 0, 1; rtol=1e-3, atol=1e-8)[1]
 end
 @showprogress desc = "Computing Θ₀..." Threads.@threads for i in 1:L
     Θ₀[i] = quadgk(x -> (x * (1 - x) - 1) * ψ_norm(i, x), 0, 1; rtol=1e-3, atol=1e-8)[1]
