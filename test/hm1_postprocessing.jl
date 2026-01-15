@@ -142,4 +142,25 @@ begin
     savefig(plt_max, joinpath(out_dir, "max_error_analysis.pdf"))
 end
 
+# --------------------------------------------------
+# FIGURE 4 - Modal Coefficients Amplitude Decay
+# --------------------------------------------------
+begin
+    sol = loaded[Nref].sol
+    ts  = loaded[Nref].ts
+    sol_t = Array{Float64,2}(undef, Nref, length(ts))
+    for (j, t) in enumerate(ts)
+        θ̄ = sol(t)
+        for i in 1:Nref
+            sol_t[i, j] = abs(θ̄[i])
+        end
+    end
+    max_sol = maximum(sol_t, dims=2)[:]
+    plt = plot(1:Nref, max_sol, label="", xlabel="Mode i", ylabel="|Θᵢ(t)|",
+               title="Modal Coefficients Amplitude Decay (N = $Nref)",
+               yscale=:log10)
+
+    savefig(plt, joinpath(out_dir, "modal_amplitude_decay_N$(Nref).pdf"))
+end
+
 println("Postprocessing complete. Figures saved in $out_dir")

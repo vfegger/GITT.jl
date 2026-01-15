@@ -82,11 +82,14 @@ println("Solved.")
 T_end = sol.u[end]
 
 p1 = Plots.plot(zf, sol.u[1], label="", markershape=:diamond)
-for T in sol.u[2:end-1]
+for T in sol.u[10:10:end-10]
     Plots.plot!(p1, zf, T, label="", alpha=0.3)
 end
 Plots.plot!(p1, zf, sol.u[end], label="", markershape=:diamond)
 
 Plots.plot(p1)
 
-Plots.savefig(p1, joinpath(@__DIR__, "burger2D_solution.pdf"))
+Plots.savefig(p1, joinpath(@__DIR__, "burger_solution.pdf"))
+
+p2 = Plots.heatmap(sol.t, zf, hcat(sol.u...), xlabel="t", ylabel="x", title="T(x,t)")
+Plots.savefig(p2, joinpath(@__DIR__, "burger_heatmap.pdf"))

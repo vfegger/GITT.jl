@@ -141,7 +141,27 @@ begin
 
     savefig(plt, joinpath(out_dir, "coeffs_vs_time_N$(N).pdf"))
 end
+begin
+    sol = loaded[Nref].sol
+    ts = loaded[Nref].ts
+    N = Nref
+    sol_t = Array{Float64}(undef, N, length(ts))
+    for (j, t) in enumerate(ts)
+        θ̄ = sol(t)
+        for i in 1:N
+            sol_t[i, j] = abs(θ̄[i])
+        end
+    end
+    max_sol = maximum(sol_t, dims=2)[:]
 
+    plt = plot(1:Nref, max_sol, label="", xlabel="Mode i", ylabel="|Θᵢ(t)|",
+        title="Modal Coefficients Amplitude Decay (N = $N)",
+        yscale=:log10)
+
+
+    savefig(plt, joinpath(out_dir, "modal_amplitude_decay_N$(N).pdf"))
+end
+exit()
 #--------------------------------------------------------------------------
 # FIGURE 2 — Reconstructed profiles at Different Times
 #--------------------------------------------------------------------------
