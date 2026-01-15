@@ -10,8 +10,8 @@ using Plots
 
 @testset "Summation Operator" begin
     @variables x a b f(..)
-    S = Symbolics.Summation()
-    S_f = S(x, f(x), a, b)
+    S = Symbolics.Summation(x in ClosedInterval(a, b))
+    S_f = S(f(x))
     rw = @rule(f(~x) => (~x)^2)
     expr0 = Symbolics.unwrap(S_f)
     expr1 = SymbolicUtils.Postwalk(rw)(expr0)
