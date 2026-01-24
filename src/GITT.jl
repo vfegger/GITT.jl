@@ -1,9 +1,9 @@
 module GITT
 
-using Symbolics
 import IntervalSets
 import SymbolicUtils
-import SymbolicUtils.Code: toexpr, search_variables!
+import SymbolicUtils.Code: function_to_expr, toexpr, search_variables!
+using Symbolics
 import DifferentialEquations
 import QuadGK: quadgk
 
@@ -11,46 +11,34 @@ export PDE_1T2X, Eigenproblem, Transform, Solve, InitialCondition_1D, BoundaryCo
 
 export Transform_array
 
-export NIntegral, At, pre_build, quadgk
+export quadgk
 
-#TODO: Progressive and Implicit Filtering of the variables in the boundary
+include("symbolics_structs.jl")
 
-#TODO: Implement Delta function to change variables throughout a given expression
+function SymbolicUtils.Code.function_to_expr(op::Integral, O, st)
+    pair = op.domain
+    var = pair.variables
+    domain = pair.domain
+    a = Symbolics.infimum(domain)
+    b = Symbolics.supremum(domain)
 
-# This function changes the symbolics callable structures like NIntegral and At into their rigid struct counterparts for calculation purposes
-function pre_build(ex::Num)
-    res = Symbolics.wrap(pre_build(Symbolics.value(ex)))
-    return res
-end
-function pre_build(ex)
-    if !istree(ex)
-        return ex
-    else
-        if SymbolicUtils.operation(ex) isa Symbolics.Summation
-            args = map(pre_build, SymbolicUtils.arguments(ex))
-            f = _Summation(args[1], args[2])
-            x = [args[3], args[4]]
-            return SymbolicUtils.Term{Symbolics.VartypeT}(f, x; type=SymbolicUtils.symtype(args[2]), shape=SymbolicUtils.shape(args[2]))
-        elseif SymbolicUtils.operation(ex) isa NIntegral
-            args = map(pre_build, SymbolicUtils.arguments(ex))
-            f = _NIntegral(args[1], args[2])
-            x = [args[3], args[4]]
-            return SymbolicUtils.Term{Symbolics.VartypeT}(f, x; type=SymbolicUtils.symtype(args[2]), shape=SymbolicUtils.shape(args[2]))
-        elseif SymbolicUtils.operation(ex) isa At
-            args = map(pre_build, SymbolicUtils.arguments(ex))
-            f = _At(args[1], args[2])
-            x = [args[3]]
-            return SymbolicUtils.Term{Symbolics.VartypeT}(f, x; type=SymbolicUtils.symtype(args[2]), shape=SymbolicUtils.shape(args[2]))
-        elseif SymbolicUtils.operation(ex) isa Indexer
-            args = map(pre_build, SymbolicUtils.arguments(ex))
-            f = _Indexer(args[1], args[2])
-            return SymbolicUtils.Term{Symbolics.VartypeT}(f, []; type=SymbolicUtils.symtype(args[2]), shape=SymbolicUtils.shape(args[2]))
+    x = gensym(:x)
+    args = SymbolicUtils.arguments(O)
+    closure_vars = SymbolicUtils.search_variables(args[1])
+    display("Closure variables: $closure_vars")
+    body_expr = begin
+        aux = (haskey(st.rewrites, var)) ? st.rewrites[var] : nothing
+        st.rewrites[var] = x
+        res = toexpr(args[1], st)
+        if aux !== nothing
+            st.rewrites[var] = aux
         else
-            op = SymbolicUtils.operation(ex)
-            args = map(pre_build, SymbolicUtils.arguments(ex))
-            return SymbolicUtils.Term{Symbolics.VartypeT}(op, args; type=SymbolicUtils.symtype(ex), shape=SymbolicUtils.shape(ex))
+            pop!(st.rewrites, var)
         end
+        res
     end
+    integral_expr = :(quadgk($x -> build_function($body_expr, $closure_vars...), $a, $b)[1])
+    return integral_expr
 end
 
 @register_symbolic Tag(s::Symbol, x)
@@ -263,9 +251,9 @@ function Transform(pde::PDE_1T2X)
     ∂Ω = IntervalSets.ClosedInterval(0.0, 1.0)
     Iₓ = Symbolics.Integral(x ∈ Ω)
     CIₓ = Symbolics.BoundaryIntegral(x ∈ ∂Ω)
-    NI = NIntegral()
-    S = Symbolics.Summation()
-    A = At()
+    Sₙ = Symbolics.Summation(n ∈ 1:N)
+    Aₗ = Symbolics.At(x ∈ Point(infimum(Ω)))
+    Aᵣ = Symbolics.At(x ∈ Point(supremum(Ω)))
     Dₜ = Symbolics.Differential(t)
     Dₓ = Symbolics.Differential(x)
     D₂ₓ = Symbolics.Differential(x, 2)
@@ -300,7 +288,7 @@ function Transform(pde::PDE_1T2X)
     coeffs = (w_eq, Symbolics.expand_derivatives(v_eq - Dₓ(k_eq)), k_eq, Symbolics.expand_derivatives(d_eq - Dₜ(w_eq) - Dₓ(v_eq - Dₓ(k_eq))), g_eq)
     display(coeffs)
     display(typeof(eq))
-    
+
     @variables kₑ dₑ wₑ
     eig_eq, eig_bc_left_expr, eig_bc_right_expr = Eigenproblem(n, x, λ, Ψ, kₑ, dₑ, wₑ, Ω, pde.boundary_condition_left_α, pde.boundary_condition_left_β, pde.boundary_condition_right_α, pde.boundary_condition_right_β)
 
@@ -325,7 +313,7 @@ function Transform(pde::PDE_1T2X)
 
     rule_AdvectionBoundaryCondition = @acrule(CIₓ(*(~!a, u(~~x), Ψ(~~y))) => A(x, *(-1, ~a, u(~~x...), Ψ(~~y...)), Ω.left) + A(x, *(~a, u(~~x...), Ψ(~~y...)), Ω.right))
     # Eigenproblem contribution part
-    rule_Equivalent = @acrule(Iₓ(*(u(~~x), Dₓ(*(~!a, Dₓ(Ψ(~~y)))))) => Iₓ(*(u(~~x...), Dₓ(*(~a - kₑ, Dₓ(Ψ(~~y...)))))) + Iₓ(*(u(~~x... ), Dₓ(*(kₑ, Dₓ(Ψ(~~y...)))))))
+    rule_Equivalent = @acrule(Iₓ(*(u(~~x), Dₓ(*(~!a, Dₓ(Ψ(~~y)))))) => Iₓ(*(u(~~x...), Dₓ(*(~a - kₑ, Dₓ(Ψ(~~y...)))))) + Iₓ(*(u(~~x...), Dₓ(*(kₑ, Dₓ(Ψ(~~y...)))))))
     rule_EquivalentEigenproblem = @acrule(Iₓ(*(u(~~x), Dₓ(*(~!a::(e -> isparallel(e, coeffs[3])), Dₓ(Ψ(~~y)))))) => Tag(:IntegrationSum, expand(Iₓ(*(kₑ / coeffs[3], u(~~x...), eig_eq - Dₓ(*(~a, Dₓ(Ψ(~~y...)))))))))
     # Integration Distribution
     rule_IntegrationSum = @acrule(Tag(:IntegrationSum, Iₓ(+(~~xs))) => +(map(xi -> Iₓ(xi), ~~xs)...))

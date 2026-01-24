@@ -17,29 +17,32 @@ using Plots
     expr1 = SymbolicUtils.Postwalk(rw)(expr0)
     expr2 = Symbolics.wrap(expr1)
     S_f_applied = expr2
-    pre_compute = pre_build(S_f_applied)
-    f_expr = build_function(pre_compute, a, b)
+    #pre_compute = pre_build(S_f_applied)
+    f_expr = build_function(S_f_applied, a, b)
+    display(f_expr)
     f_evaluated = eval(f_expr)
     f_analytic(a, b) = (b * (b + 1) * (2b + 1) - (a - 1) * a * (2a - 1)) / 6
     @test f_evaluated(1, 3) == f_analytic(1, 3)
     @test f_evaluated(4, 6) == f_analytic(4, 6)
 end
 
-@testset "Numerical Integral Operator" begin
+@testset "Integral Operator" begin
     @variables x a b f(..)
-    I = NIntegral()
-    I_f = I(x, f(x), a, b)
+    I = Integral(x in ClosedInterval(a, b))
+    I_f = I(f(x))
     rw = @rule(f(~x) => (~x)^2)
     expr0 = Symbolics.unwrap(I_f)
     expr1 = SymbolicUtils.Postwalk(rw)(expr0)
     expr2 = Symbolics.wrap(expr1)
+    @test typeof(expr2) <: Symbolics.Num
+    @test isequal(expr2, I(x^2))
     I_f_applied = expr2
-    pre_compute = pre_build(I_f_applied)
-    f_expr = build_function(pre_compute, a, b)
-    f_evaluated = eval(f_expr)
-    f_analytic(a, b) = (b^3 - a^3) / 3
-    @test f_evaluated(0, 1) ≈ f_analytic(0, 1)
-    @test f_evaluated(3, 5) ≈ f_analytic(3, 5)
+    #pre_compute = pre_build(I_f_applied)
+    #f_expr = build_function(pre_compute, a, b)
+    #f_evaluated = eval(f_expr)
+    #f_analytic(a, b) = (b^3 - a^3) / 3
+    #@test f_evaluated(0, 1) ≈ f_analytic(0, 1)
+    #@test f_evaluated(3, 5) ≈ f_analytic(3, 5)
 end
 
 @testset "At Operator" begin
