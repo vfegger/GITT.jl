@@ -1,6 +1,7 @@
 module GITT
 
 import IntervalSets
+import DomainSets
 import SymbolicUtils
 import SymbolicUtils.Code: function_to_expr, toexpr, search_variables!
 using Symbolics
@@ -8,6 +9,11 @@ import DifferentialEquations
 import QuadGK: quadgk
 
 export PDE_1T2X, Eigenproblem, Transform, Solve, InitialCondition_1D, BoundaryCondition_1D, Recover
+export expand_integrals
+
+export InitialCondition, BoundaryCondition
+export PDE, filter!, Transform
+
 
 export Transform_array
 
@@ -15,31 +21,12 @@ export quadgk
 
 include("symbolics_structs.jl")
 
-function SymbolicUtils.Code.function_to_expr(op::Integral, O, st)
-    pair = op.domain
-    var = pair.variables
-    domain = pair.domain
-    a = Symbolics.infimum(domain)
-    b = Symbolics.supremum(domain)
-
-    x = gensym(:x)
-    args = SymbolicUtils.arguments(O)
-    closure_vars = SymbolicUtils.search_variables(args[1])
-    display("Closure variables: $closure_vars")
-    body_expr = begin
-        aux = (haskey(st.rewrites, var)) ? st.rewrites[var] : nothing
-        st.rewrites[var] = x
-        res = toexpr(args[1], st)
-        if aux !== nothing
-            st.rewrites[var] = aux
-        else
-            pop!(st.rewrites, var)
-        end
-        res
-    end
-    integral_expr = :(quadgk($x -> build_function($body_expr, $closure_vars...), $a, $b)[1])
-    return integral_expr
-end
+# Main features:
+# Transform partial equation to system of ODEs via spectral method
+# Solve system of ODEs
+# Recover solution of original PDE
+# Support for initial and boundary conditions
+# Support for filtering of non-homogeneous boundary conditions and source terms
 
 @register_symbolic Tag(s::Symbol, x)
 @register_symbolic δ(x, y)
@@ -58,6 +45,135 @@ _dict_math = Dict([
     :d => +1,
     :g => +1
 ])
+
+struct InitialCondition
+    at::Symbolics.Num
+    function InitialCondition(at::Number)
+        return new(Symbolics.wrap(at))
+    end
+    function InitialCondition(at::Symbolics.Num)
+        return new(at)
+    end
+    function InitialCondition()
+        return new(Symbolics.wrap(0.0))
+    end
+end
+
+struct BoundaryCondition
+    α::Symbolics.Num
+    β::Symbolics.Num
+    φ::Symbolics.Num
+    function BoundaryCondition(α::Union{Number,Symbolics.Num}, β::Union{Number,Symbolics.Num}, φ::Union{Number,Symbolics.Num})
+        return new(isa(α, Number) ? Symbolics.wrap(α) : α, isa(β, Number) ? Symbolics.wrap(β) : β, isa(φ, Number) ? Symbolics.wrap(φ) : φ)
+    end
+    function BoundaryCondition()
+        return new(Symbolics.wrap(1.0), Symbolics.wrap(0.0), Symbolics.wrap(0.0))
+    end
+end
+
+mutable struct PDE
+    Ω::DomainSets.Domain # Spatial domain
+    T::DomainSets.Domain # Temporal domain
+
+    var_t::Symbolics.Num
+    var_x::Symbolics.Num
+    op_u::Symbolics.CallAndWrap{Num}
+
+    terms::Dict{Symbol,Symbolics.Num}
+
+    ic::InitialCondition
+    bc::BoundaryCondition
+
+    filter::Symbolics.Num
+
+    function PDE(Ω::DomainSets.Domain, T::DomainSets.Domain, t::Symbolics.Num, x::Symbolics.Num, u::Symbolics.CallAndWrap{Num}, terms::Dict{Symbol,Symbolics.Num}; ic=InitialCondition(), bc::BoundaryCondition=BoundaryCondition())
+        return new(Ω, T, t, x, u, terms, ic, bc, Symbolics.wrap(0.0))
+    end
+end
+
+function filter!(pde::PDE; addition_rules::Dict{Symbol,<:SymbolicUtils.Rule})
+    # Filtering based in a 1D space domain with no dependency in u
+    # Should work for linear terms only
+    l, r = DomainSets.leftendpoint(pde.Ω), DomainSets.rightendpoint(pde.Ω)
+    t = pde.var_t
+    x = pde.var_x
+    @variables a(t) b(t)
+    if pde.bc.α == 0.0
+        γ = (a * x + b) * x
+    else
+        γ = a * x + b
+    end
+    bc_left = expand_derivatives(At(x ∈ DomainSets.Point(l))(pde.bc.α * γ + pde.bc.β * Differential(x)(γ) - pde.bc.φ), l) ~ 0
+    bc_right = expand_derivatives(At(x ∈ DomainSets.Point(r))(pde.bc.α * γ + pde.bc.β * Differential(x)(γ) - pde.bc.φ), r) ~ 0
+
+    display(bc_left)
+    display(bc_right)
+    result = Symbolics.symbolic_linear_solve([bc_left, bc_right], [a, b])
+    subs = [a => result[1], b => result[2]]
+    pde.filter = Symbolics.substitute(γ, subs)
+
+    display(pde.filter)
+
+    for (_, term) in pde.terms
+        Symbolics.substitute(term, pde.op_u(pde.var_t, pde.var_x) => pde.op_u(pde.var_t, pde.var_x) + pde.filter)
+    end
+    # Check if all terms have conversion rules
+    for (key, _) in pde.terms
+        if !haskey(addition_rules, key)
+            error("No conversion rule provided for term: $key")
+        end
+    end
+
+    # Expand terms with provided rules
+    for (key, rule) in addition_rules
+        pde.terms[key] = Symbolics.wrap(SymbolicUtils.Postwalk(rule)(Symbolics.value(pde.terms[key])))
+    end
+end
+
+function (pde::PDE)()
+    return sum(values(pde.terms))
+end
+
+function apply(expr, rules::Dict{Symbol,<:SymbolicUtils.AbstractRule})
+    result = expr
+    for (name, rw) in rules
+        display("Applying rule: $name")
+        result_new = Symbolics.wrap(rw(Symbolics.value(result)))
+        result = result_new
+        display(result)
+    end
+    return Symbolics.wrap(result)
+end
+
+function Transform(pde::PDE)
+    # Transform terms in system of differential equations
+    t = pde.var_t
+    x = pde.var_x
+    u = pde.op_u
+    @variables n::Integer N::Integer m::Integer Θ(..) Ψ(..) λ(..)
+    Ω = pde.Ω
+    ∂Ω = DomainSets.boundary(Ω)
+    Iₓ = Symbolics.Integral(x ∈ Ω)
+    CIₓ = Symbolics.BoundaryIntegral(x ∈ ∂Ω)
+    Sₙ = Symbolics.Summation(n ∈ 1:N)
+    Dₜ = Symbolics.Differential(t)
+    Dₓ = Symbolics.Differential(x)
+
+    eq = pde()
+    display(eq)
+
+    initial_condition = pde.ic.at
+
+    # Transform Rules
+    rule_TransformI = @acrule(u(~t, ~x) => S(m, *(Θ(m, ~t), Ψ(m, ~x)), 1, N))
+
+    rules_AT = [
+        ("TransformI", SymbolicUtils.Postwalk(rule_TransformI))
+    ]
+
+    transformed_form = apply(Iₓ(eq * Ψ(n, x)), rules_AT)
+    transformed_initial_condition = apply(Iₓ(initial_condition * Ψ(n, x)), rules_AT)
+end
 
 struct InitialCondition_1D
     at::Number

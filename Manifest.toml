@@ -2,7 +2,7 @@
 
 julia_version = "1.12.4"
 manifest_format = "2.0"
-project_hash = "0cd4ad5a3130c6159786389da9f3871ced491f2f"
+project_hash = "98d0e567f3e559009af5417816f51bcb639eb622"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "f7304359109c768cf32dc5fa2d371565bb63b68a"
@@ -1004,7 +1004,7 @@ uuid = "9fa8497b-333b-5362-9e8d-4d0656e87820"
 version = "1.11.0"
 
 [[deps.GITT]]
-deps = ["DifferentialEquations", "HCubature", "IntervalSets", "JLD2", "LinearAlgebra", "Plots", "ProgressMeter", "QuadGK", "Roots", "SymbolicIntegration", "SymbolicUtils", "Symbolics"]
+deps = ["DifferentialEquations", "DomainSets", "HCubature", "IntervalSets", "JLD2", "LinearAlgebra", "Plots", "ProgressMeter", "QuadGK", "Roots", "SymbolicIntegration", "SymbolicNumericIntegration", "SymbolicUtils", "Symbolics"]
 path = "."
 uuid = "d950cf2b-e10a-4535-a1f1-d89287175ab2"
 version = "0.1.0"

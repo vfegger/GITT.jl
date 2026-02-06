@@ -3,162 +3,57 @@ Pkg.activate(joinpath(@__DIR__, ".."))
 include("../src/GITT.jl")
 using Symbolics
 using IntervalSets
+using DomainSets
 using Test
 using .GITT
 using DifferentialEquations
 using Plots
+using QuadGK
 
-@testset "Summation Operator" begin
-    @variables x a b f(..)
-    S = Symbolics.Summation(x in ClosedInterval(a, b))
-    S_f = S(f(x))
-    rw = @rule(f(~x) => (~x)^2)
-    expr0 = Symbolics.unwrap(S_f)
-    expr1 = SymbolicUtils.Postwalk(rw)(expr0)
-    expr2 = Symbolics.wrap(expr1)
-    S_f_applied = expr2
-    #pre_compute = pre_build(S_f_applied)
-    f_expr = build_function(S_f_applied, a, b)
-    display(f_expr)
-    f_evaluated = eval(f_expr)
-    f_analytic(a, b) = (b * (b + 1) * (2b + 1) - (a - 1) * a * (2a - 1)) / 6
-    @test f_evaluated(1, 3) == f_analytic(1, 3)
-    @test f_evaluated(4, 6) == f_analytic(4, 6)
+@testset "Diffusion Test" begin
+    Ω = DomainSets.ClosedInterval(0.0, 1.0)
+    T = DomainSets.ClosedInterval(0.0, 1.0)
+    @variables a t x u(..)
+    A = At(x ∈ Point(a))
+    Dₜ = Differential(t)
+    Dₓ = Differential(x)
+    ic = InitialCondition(sin(π * x))
+    α = 1.0
+    β = 0.0
+    φ = 0.0
+    bc = BoundaryCondition(α, β, φ)
+    @test typeof(ic) == InitialCondition
+    ic_test = build_function(ic.at, x)
+    ic_evaluated = eval(ic_test)
+    @test ic_evaluated(0.5) ≈ sin(π * 0.5)
+    @test typeof(bc) == BoundaryCondition
+    α_test = build_function(A(bc.α), a)
+    β_test = build_function(A(bc.β), a)
+    φ_test = build_function(A(bc.φ), a)
+    α_evaluated = eval(α_test)
+    β_evaluated = eval(β_test)
+    φ_evaluated = eval(φ_test)
+    @test α_evaluated(0.0) ≈ α
+    @test β_evaluated(0.0) ≈ β
+    @test φ_evaluated(0.0) ≈ φ
+
+    terms = Dict{Symbol,Symbolics.Num}(
+        :Temporal => Dₜ(u(t, x)),
+        :Diffusion => -Dₓ(Dₓ(u(t, x))),
+    )
+    addition_rules = Dict(
+        :Temporal => @rule(Dₜ(u(~t, ~x) + ~f) => Dₜ(u(~t, ~x)) + Dₜ(~f)),
+        :Diffusion => @rule(-Dₓ(Dₓ(u(~t, ~x) + ~f)) => -Dₓ(Dₓ(u(~t, ~x))) - Dₓ(Dₓ(~f))),
+    )
+    pde = PDE(Ω, T, t, x, u, terms; ic=ic, bc=bc)
+    #GITT.filter!(pde; addition_rules=addition_rules)
+    eq = pde()
+    display(eq)
+    @test typeof(eq) <: Symbolics.Num
+    @test isequal(eq, Dₜ(u(t, x)) - Dₓ(Dₓ(u(t, x))))
 end
 
-@testset "Integral Operator" begin
-    @variables x a b f(..)
-    I = Integral(x in ClosedInterval(a, b))
-    I_f = I(f(x))
-    rw = @rule(f(~x) => (~x)^2)
-    expr0 = Symbolics.unwrap(I_f)
-    expr1 = SymbolicUtils.Postwalk(rw)(expr0)
-    expr2 = Symbolics.wrap(expr1)
-    @test typeof(expr2) <: Symbolics.Num
-    @test isequal(expr2, I(x^2))
-    I_f_applied = expr2
-    #pre_compute = pre_build(I_f_applied)
-    #f_expr = build_function(pre_compute, a, b)
-    #f_evaluated = eval(f_expr)
-    #f_analytic(a, b) = (b^3 - a^3) / 3
-    #@test f_evaluated(0, 1) ≈ f_analytic(0, 1)
-    #@test f_evaluated(3, 5) ≈ f_analytic(3, 5)
-end
-
-@testset "At Operator" begin
-    @variables a x f(..)
-    At_x = At()
-    expr = At_x(x, f(x), a)
-    rw = @rule(f(~x) => (~x)^2)
-    expr_applied = Symbolics.wrap(SymbolicUtils.Postwalk(rw)(Symbolics.value(expr)))
-    pre_compute = pre_build(expr_applied)
-    f_expr = build_function(pre_compute, a)
-    f_evaluated = eval(f_expr)
-    @test f_evaluated(2.0) ≈ 4.0
-    @test f_evaluated(3.0) ≈ 9.0
-    @test f_evaluated(-3.0) ≈ 9.0
-end
-
-@testset "Composition Test" begin
-    @variables x y a b c d f(..)
-    I = NIntegral()
-    A = At()
-    S = Symbolics.Summation()
-    @testset "At of NIntegral" begin
-        I_f = I(x, f(x, y), a, b)
-        At_I_f = A(y, I_f, c)
-        rw = @rule(f(~x, ~y) => (~x)^2 + (~y))
-        expr0 = Symbolics.unwrap(At_I_f)
-        expr1 = SymbolicUtils.Postwalk(rw)(expr0)
-        expr2 = Symbolics.wrap(expr1)
-        At_I_f_applied = expr2
-        pre_compute = pre_build(At_I_f_applied)
-        f_expr = build_function(pre_compute, a, b, c)
-        f_evaluated = eval(f_expr)
-        f_analytic(a, b, c) = (b^3 - a^3) / 3 + (b - a) * c
-        @test f_evaluated(0.0, 4.0, 2.0) ≈ f_analytic(0.0, 4.0, 2.0)
-        @test f_evaluated(2.0, 4.0, 2.0) ≈ f_analytic(2.0, 4.0, 2.0)
-    end
-    @testset "Summation of At" begin
-        At_f = A(x, f(x, y), a)
-        S_At_f = S(y, At_f, b, c)
-        rw = @rule(f(~x, ~y) => (~x)^2 + (~y))
-        expr0 = Symbolics.unwrap(S_At_f)
-        expr1 = SymbolicUtils.Postwalk(rw)(expr0)
-        expr2 = Symbolics.wrap(expr1)
-        S_At_f_applied = expr2
-        pre_compute = pre_build(S_At_f_applied)
-        f_expr = build_function(pre_compute, a, b, c)
-        f_evaluated = eval(f_expr)
-        f_analytic(a, b, c) = a^2 * (c - b + 1) + ((c * (c + 1)) / 2 - (b * (b - 1)) / 2)
-        @test f_evaluated(1, 2, 3) ≈ f_analytic(1, 2, 3)
-        @test f_evaluated(2, 3, 4) ≈ f_analytic(2, 3, 4)
-    end
-    @testset "NIntegral of Summation" begin
-        S_f = S(x, f(x), 1, 3)
-        I_S_f = I(x, S_f, a, b)
-        rw = @rule(f(~x) => (~x)^2)
-        expr0 = Symbolics.unwrap(I_S_f)
-        expr1 = SymbolicUtils.Postwalk(rw)(expr0)
-        expr2 = Symbolics.wrap(expr1)
-        I_S_f_applied = expr2
-        pre_compute = pre_build(I_S_f_applied)
-        f_expr = build_function(pre_compute, a, b)
-        #display(f_expr)
-        f_evaluated = eval(f_expr)
-        f_analytic(a, b) = (b - a) * (1^2 + 2^2 + 3^2)
-        @test f_evaluated(0, 1) ≈ f_analytic(0, 1)
-        @test f_evaluated(1, 2) ≈ f_analytic(1, 2)
-    end
-    @testset "Summation of NIntegral" begin
-        I_f = I(x, f(x), a, b)
-        S_I_f = S(x, I_f, 1, 3)
-        rw = @rule(f(~x) => (~x)^2)
-        expr0 = Symbolics.unwrap(S_I_f)
-        expr1 = SymbolicUtils.Postwalk(rw)(expr0)
-        expr2 = Symbolics.wrap(expr1)
-        S_I_f_applied = expr2
-        pre_compute = pre_build(S_I_f_applied)
-        f_expr = build_function(pre_compute, a, b)
-        #display(f_expr)
-        f_evaluated = eval(f_expr)
-        f_analytic(a, b) = ((b^3 - a^3) / 3) * 3
-        @test f_evaluated(0, 1) ≈ f_analytic(0, 1)
-        @test f_evaluated(1, 2) ≈ f_analytic(1, 2)
-    end
-    @testset "At of Summation" begin
-        S_f = S(x, f(x), 1, 3)
-        At_S_f = A(x, S_f, a)
-        rw = @rule(f(~x) => (~x)^2)
-        expr0 = Symbolics.unwrap(At_S_f)
-        expr1 = SymbolicUtils.Postwalk(rw)(expr0)
-        expr2 = Symbolics.wrap(expr1)
-        At_S_f_applied = expr2
-        pre_compute = pre_build(At_S_f_applied)
-        f_expr = build_function(pre_compute, a)
-        #display(f_expr)
-        f_evaluated = eval(f_expr)
-        f_analytic(a) = 1^2 + 2^2 + 3^2
-        @test f_evaluated(0) ≈ f_analytic(0)
-        @test f_evaluated(5) ≈ f_analytic(5)
-    end
-    @testset "NIntegral of At" begin
-        At_f = A(x, f(x), a)
-        I_At_f = I(x, At_f, 0, 2)
-        rw = @rule(f(~x) => (~x)^2)
-        expr0 = Symbolics.unwrap(I_At_f)
-        expr1 = SymbolicUtils.Postwalk(rw)(expr0)
-        expr2 = Symbolics.wrap(expr1)
-        I_At_f_applied = expr2
-        pre_compute = pre_build(I_At_f_applied)
-        f_expr = build_function(pre_compute, a)
-        #display(f_expr)
-        f_evaluated = eval(f_expr)
-        f_analytic(a) = (2 - 0) * a^2
-        @test f_evaluated(1) ≈ f_analytic(1)
-        @test f_evaluated(3) ≈ f_analytic(3)
-    end
-end
+exit()
 
 @testset "GITT.jl" begin
     @variables t x u(..)

@@ -2,33 +2,8 @@
 import Symbolics
 import SymbolicUtils
 import SymbolicIntegration
-
-function expand_integrals(expr)
-    if !istree(expr)
-        return expr
-    else
-        op = SymbolicUtils.operation(expr)
-        args = map(expand_integrals, SymbolicUtils.arguments(expr))
-        if op isa Integral
-            pair = op.domain
-            a = Symbolics.infimum(pair.domain)
-            b = Symbolics.supremum(pair.domain)
-            x = pair.variables
-            f = args[1]
-            # Try integrate symbolically
-            si = SymbolicIntegration.integrate(f, x)
-            if si !== nothing
-                sup = Symbolics.substitute(si, Dict(x => b))
-                inf = Symbolics.substitute(si, Dict(x => a))
-                return sup - inf
-            else
-                return SymbolicUtils.Term{Symbolics.VartypeT}(op, args; type=Symbolics.symtype(expr), shape=Symbolics.shape(expr))
-            end
-        else
-            return SymbolicUtils.Term{Symbolics.VartypeT}(op, args; type=Symbolics.symtype(expr), shape=Symbolics.shape(expr))
-        end
-    end
-end
+import StaticArrays
+import DomainSets
 
 struct _Indexer
     array
