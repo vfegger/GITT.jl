@@ -3,7 +3,7 @@ import StaticArrays
 
 
 # Expand Domain functionality with a function to create create a Vector of n-1 dimensional faces for HyperRectangles
-function normed_boundary(D::DomainSets.UnitInterval{T}) where {T}
+function normed_boundary(D::DomainSets.Interval{L,R,T}) where {L,R,T}
     left = DomainSets.leftendpoint(D)
     right = DomainSets.rightendpoint(D)
 

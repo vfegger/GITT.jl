@@ -51,6 +51,8 @@ using QuadGK
     display(eq)
     @test typeof(eq) <: Symbolics.Num
     @test isequal(eq, Dₜ(u(t, x)) - Dₓ(Dₓ(u(t, x))))
+
+    transformed_eq = Transform(pde)
 end
 
 exit()

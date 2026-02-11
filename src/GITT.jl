@@ -20,6 +20,8 @@ export Transform_array
 export quadgk
 
 include("symbolics_structs.jl")
+include("extend_domain.jl")
+include("expand_integrals.jl")
 
 # Main features:
 # Transform partial equation to system of ODEs via spectral method
@@ -134,7 +136,7 @@ function (pde::PDE)()
     return sum(values(pde.terms))
 end
 
-function apply(expr, rules::Dict{Symbol,<:SymbolicUtils.AbstractRule})
+function apply(expr, rules)
     result = expr
     for (name, rw) in rules
         display("Applying rule: $name")
@@ -152,10 +154,11 @@ function Transform(pde::PDE)
     u = pde.op_u
     @variables n::Integer N::Integer m::Integer Θ(..) Ψ(..) λ(..)
     Ω = pde.Ω
-    ∂Ω = DomainSets.boundary(Ω)
-    Iₓ = Symbolics.Integral(x ∈ Ω)
-    CIₓ = Symbolics.BoundaryIntegral(x ∈ ∂Ω)
-    Sₙ = Symbolics.Summation(n ∈ 1:N)
+    ∂Ωs, ∂Ω_normals = normed_boundary(Ω)
+    display(∂Ωs)
+    display(∂Ω_normals)
+    Iₓ = Symbolics.Integral(DomainSets.in(x, Ω))
+    Sₙ = Symbolics.Summation(n ∈ DomainSets.ClosedInterval(1, N))
     Dₜ = Symbolics.Differential(t)
     Dₓ = Symbolics.Differential(x)
 
@@ -165,7 +168,7 @@ function Transform(pde::PDE)
     initial_condition = pde.ic.at
 
     # Transform Rules
-    rule_TransformI = @acrule(u(~t, ~x) => S(m, *(Θ(m, ~t), Ψ(m, ~x)), 1, N))
+    rule_TransformI = @acrule(u(~t, ~x) => Sₙ(*(Θ(n, ~t), Ψ(n, ~x))))
 
     rules_AT = [
         ("TransformI", SymbolicUtils.Postwalk(rule_TransformI))
@@ -173,6 +176,11 @@ function Transform(pde::PDE)
 
     transformed_form = apply(Iₓ(eq * Ψ(n, x)), rules_AT)
     transformed_initial_condition = apply(Iₓ(initial_condition * Ψ(n, x)), rules_AT)
+
+    display(transformed_form)
+    display(transformed_initial_condition)
+
+
 end
 
 struct InitialCondition_1D
