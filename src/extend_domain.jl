@@ -1,6 +1,13 @@
 import DomainSets
 import StaticArrays
 
+#Expand infinum and supremum functionality for DomainSets.jl
+function Symbolics.infimum(D::DomainSets.Interval{L,R,T}) where {L,R,T}
+    return DomainSets.leftendpoint(D)
+end
+function Symbolics.supremum(D::DomainSets.Interval{L,R,T}) where {L,R,T}
+    return DomainSets.rightendpoint(D)
+end
 
 # Expand Domain functionality with a function to create create a Vector of n-1 dimensional faces for HyperRectangles
 function normed_boundary(D::DomainSets.Interval{L,R,T}) where {L,R,T}

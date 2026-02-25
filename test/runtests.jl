@@ -13,11 +13,11 @@ using QuadGK
 @testset "Diffusion Test" begin
     Ω = DomainSets.ClosedInterval(0.0, 1.0)
     T = DomainSets.ClosedInterval(0.0, 1.0)
-    @variables a t x u(..)
+    @variables a t x u(..) ψ(..)
     A = At(x ∈ Point(a))
     Dₜ = Differential(t)
     Dₓ = Differential(x)
-    ic = InitialCondition(sin(π * x))
+    ic = InitialCondition(sin(π * 1.0 * x))
     α = 1.0
     β = 0.0
     φ = 0.0
@@ -52,7 +52,24 @@ using QuadGK
     @test typeof(eq) <: Symbolics.Num
     @test isequal(eq, Dₜ(u(t, x)) - Dₓ(Dₓ(u(t, x))))
 
-    transformed_eq = Transform(pde)
+    transformation_rules = Dict(
+    )
+
+    transformed_eq, transformed_ic = Transform(pde)
+
+    display(typeof(transformed_eq))
+    display(typeof(transformed_ic))
+
+    @test typeof(transformed_eq) <: Symbolics.Num
+    @test typeof(transformed_ic) <: Symbolics.Num
+
+    eigenfunctions = [Symbolics.wrap(sin(π * n * x)) for n in 1:5]
+    eigenvalues = [Symbolics.wrap((π * n)^2) for n in 1:5]
+
+    result = Solve(transformed_eq, transformed_ic, eigenfunctions, eigenvalues)
+
+    Θ = Recover(result, eigenfunctions, range(0, 1, length=100))
+    savefig(surface(result.t, range(0, 1, length=100), Θ'), "diffusion_result_surface.pdf")
 end
 
 exit()

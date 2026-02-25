@@ -39,7 +39,8 @@ function expand_integrals(expr)
         return expr
     else
         op = SymbolicUtils.operation(unwrap_expr)
-        args = map(Symbolics.wrap ∘ expand_integrals, SymbolicUtils.arguments(unwrap_expr))
+        unwrap_args = SymbolicUtils.arguments(unwrap_expr)
+        args = map(Symbolics.wrap ∘ expand_integrals, unwrap_args)
         if op isa Symbolics.Integral
             pair = op.domain
             a = Symbolics.infimum(pair.domain)
@@ -53,10 +54,10 @@ function expand_integrals(expr)
                 inf = Symbolics.substitute(si, Dict(x => a))
                 return sup - inf
             else
-                return SymbolicUtils.Term{Symbolics.VartypeT}(op, args; type=Symbolics.symtype(expr), shape=Symbolics.shape(expr))
+                return Symbolics.wrap(SymbolicUtils.Term{Symbolics.VartypeT}(op, unwrap_args; type=Symbolics.symtype(expr), shape=Symbolics.shape(expr)))
             end
         else
-            return SymbolicUtils.Term{Symbolics.VartypeT}(op, args; type=Symbolics.symtype(expr), shape=Symbolics.shape(expr))
+            return Symbolics.wrap(SymbolicUtils.Term{Symbolics.VartypeT}(op, unwrap_args; type=Symbolics.symtype(expr), shape=Symbolics.shape(expr)))
         end
     end
 end

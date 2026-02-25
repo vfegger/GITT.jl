@@ -8,14 +8,10 @@ using Symbolics
 import DifferentialEquations
 import QuadGK: quadgk
 
-export PDE_1T2X, Eigenproblem, Transform, Solve, InitialCondition_1D, BoundaryCondition_1D, Recover
 export expand_integrals
 
 export InitialCondition, BoundaryCondition
-export PDE, filter!, Transform
-
-
-export Transform_array
+export PDE, filter!, Transform, Solve, Recover
 
 export quadgk
 
@@ -139,11 +135,25 @@ end
 function apply(expr, rules)
     result = expr
     for (name, rw) in rules
-        display("Applying rule: $name")
-        result_new = Symbolics.wrap(rw(Symbolics.value(result)))
-        result = result_new
-        display(result)
+        println("Applying rule: $name")
+        result_new = Num(0)
+        try
+            result_new = Symbolics.wrap(rw(Symbolics.value(result)))
+        catch err
+            println("Error applying rule: $name")
+            dump(open(joinpath("dump", "apply.txt"), "w"), result)
+            rethrow(err)
+        end
+        if string(result) != string(result_new)
+            print("\t")
+            show(stdout, MIME"text/plain"(), result_new)
+            println()
+            result = result_new
+        else
+            println("\tRule was not applied.")
+        end
     end
+    println()
     return Symbolics.wrap(result)
 end
 
@@ -152,7 +162,7 @@ function Transform(pde::PDE)
     t = pde.var_t
     x = pde.var_x
     u = pde.op_u
-    @variables n::Integer N::Integer m::Integer Θ(..) Ψ(..) λ(..)
+    @variables n::Integer N::Integer m::Integer θ(..) Ψ(..) λ(..)
     Ω = pde.Ω
     ∂Ωs, ∂Ω_normals = normed_boundary(Ω)
     display(∂Ωs)
@@ -161,28 +171,135 @@ function Transform(pde::PDE)
     Sₙ = Symbolics.Summation(n ∈ DomainSets.ClosedInterval(1, N))
     Dₜ = Symbolics.Differential(t)
     Dₓ = Symbolics.Differential(x)
+    Dₓ₂ = Symbolics.Differential(x, 2)
 
     eq = pde()
     display(eq)
+    dump(open(joinpath("dump", "eq.txt"), "w"), eq)
 
     initial_condition = pde.ic.at
 
     # Transform Rules
-    rule_TransformI = @acrule(u(~t, ~x) => Sₙ(*(Θ(n, ~t), Ψ(n, ~x))))
+    rule_IS = @acrule(Iₓ(+(~~xs)) => +(Iₓ.(~~xs)...))
+    rule_IxDt2DtIx = @acrule(Iₓ(Dₜ(~f) * ~g::(e -> !any(depend_on.(t, e)))) => Dₜ(Iₓ(~f * ~g)))
+    rule_IxDDxy2IxDDyx_0 = @acrule(Iₓ(*(~!a, Dₓ₂(u(~t, ~x)), Ψ(~n, ~x))) => Iₓ(*(~a, Dₓ₂(Ψ(~n, ~x)), u(~t, ~x))))
+    rule_IxDDxy2IxDDyx_1 = @acrule(Iₓ(*(~!a0, Dₓ(*(~!a1, Dₓ(u(~t, ~x)))), Ψ(~n, ~x))) => Iₓ(*(~a0, Dₓ(*(~a1, Dₓ(Ψ(~n, ~x)))), u(~t, ~x))))
+    rule_DDψ2λψ_0 = @acrule(Dₓ₂(Ψ(~n, ~x)) => λ(~n) * Ψ(~n, ~x))
+    rule_DDψ2λψ_1 = @acrule(Dₓ(*(~!a, Dₓ(u(~t, ~x)))) => λ(~n) * Ψ(~n, ~x))
+    rule_TransformF = @acrule(Iₓ(*(~!a::(e -> !any(depend_on.(x, e))), u(~t, ~x), Ψ(~n, ~x), ~~as::(e -> !any(depend_on.(x, e))))) => *(~a, θ(~n, ~t), ~~as...))
+    rule_TransformI = @acrule(u(~t, ~x) => Sₙ(*(θ(n, ~t), Ψ(n, ~x))))
+    rule_SAssociativity = @acrule(*(Sₙ(~f), ~~gs::(e -> !any(depend_on.(x, e)))) => Sₙ(*(~f, ~~gs...)))
+    rule_IS2SI = @acrule(Iₓ(Sₙ(~f)) => Sₙ(Iₓ(~f)))
 
     rules_AT = [
-        ("TransformI", SymbolicUtils.Postwalk(rule_TransformI))
+        ("IS", SymbolicUtils.Postwalk(rule_IS)),
+        ("IxDt2DtIx", SymbolicUtils.Postwalk(rule_IxDt2DtIx)),
+        ("IxDDxy2IxDDyx_0", SymbolicUtils.Postwalk(rule_IxDDxy2IxDDyx_0)),
+        ("IxDDxy2IxDDyx_1", SymbolicUtils.Postwalk(rule_IxDDxy2IxDDyx_1)),
+        ("DDψ2λψ_0", SymbolicUtils.Postwalk(rule_DDψ2λψ_0)),
+        ("DDψ2λψ_1", SymbolicUtils.Postwalk(rule_DDψ2λψ_1)),
+        ("TransformF", SymbolicUtils.Postwalk(rule_TransformF)),
+        ("TransformI", SymbolicUtils.Postwalk(rule_TransformI)),
+        ("SAssociativity", SymbolicUtils.Postwalk(rule_SAssociativity)),
+        ("SumIntegral", SymbolicUtils.Postwalk(rule_IS2SI)),
     ]
 
-    transformed_form = apply(Iₓ(eq * Ψ(n, x)), rules_AT)
-    transformed_initial_condition = apply(Iₓ(initial_condition * Ψ(n, x)), rules_AT)
+    transformed_form = apply(expand(Iₓ(eq * Ψ(n, x))), rules_AT)
+    dump(open(joinpath("dump", "transformed_form.txt"), "w"), transformed_form)
+    transformed_initial_condition = apply(expand(Iₓ(initial_condition * Ψ(n, x))), rules_AT)
 
-    display(transformed_form)
-    display(transformed_initial_condition)
-
-
+    return transformed_form, transformed_initial_condition
 end
 
+function Solve(equation, initial_condition, eigenfunctions, eigenvalues)
+    @variables n::Integer t x p θ(..) Θ(..)[1:length(eigenfunctions)] Ψ(..) λ(..)
+    Dₜ = Symbolics.Differential(t)
+    system = Symbolics.Num[]
+    ics = Symbolics.Num[]
+    for (i, (eigfun, eigval)) in enumerate(zip(eigenfunctions, eigenvalues))
+        rule_eigenfun_i = @acrule(Ψ(~n, ~x) => eigfun)
+        rule_eigenval_i = @acrule(λ(~n) => eigval)
+        rule_function_i = @acrule(θ(~n, ~t) => Θ(t)[i])
+        rules = Dict("Eigenfun" => SymbolicUtils.Postwalk(rule_eigenfun_i), "Eigenval" => SymbolicUtils.Postwalk(rule_eigenval_i), "Function" => SymbolicUtils.Postwalk(rule_function_i))
+        eq = apply(equation, rules)
+        ic = apply(initial_condition, rules)
+        eq_lhs = Symbolics.coeff(eq, Dₜ(Θ(t)[i]))
+        eq_rhs = Symbolics.expand((eq - eq_lhs * Dₜ(Θ(t)[i])) / eq_lhs)
+
+        push!(system, eq_rhs)
+        push!(ics, ic)
+
+        @assert typeof(eq) <: Symbolics.Num "Transformed equation is not a symbolic expression. Got: $(typeof(eq))"
+        @assert typeof(ic) <: Symbolics.Num "Transformed initial condition is not a symbolic expression. Got: $(typeof(ic))"
+    end
+    @assert typeof(system) <: Vector{Symbolics.Num} "System of equations is not a vector of symbolic expressions. Got: $(typeof(system))"
+    @assert typeof(ics) <: Vector{Symbolics.Num} "Initial conditions is not a vector of symbolic expressions. Got: $(typeof(ics))"
+
+    # Algebraic Solver of known integrals and numerical solver for unknown integrals
+    system = expand_integrals.(system)
+    ics = expand_integrals.(ics)
+
+    @assert typeof(system) <: Vector{Symbolics.Num} "System of equations after expanding integrals is not a vector of symbolic expressions. Got: $(typeof(system))"
+    @assert typeof(ics) <: Vector{Symbolics.Num} "Initial conditions after expanding integrals is not a vector of symbolic expressions. Got: $(typeof(ics))"
+
+    display(system)
+    display(ics)
+    eq_expr = first(build_function(system, Θ(t), p, t; expression=Val(false)))
+    ic_expr = first(build_function(ics; expression=Val(false)))
+
+    display(eq_expr)
+    display(ic_expr)
+
+    tspan = (0.0, 1.0)
+    prob = DifferentialEquations.ODEProblem(eq_expr, ic_expr(), tspan)
+    result = DifferentialEquations.solve(prob, DifferentialEquations.Rosenbrock23())
+
+    return result
+end
+
+function Recover(result, eigenfunctions, x_values)
+    @variables n::Integer x
+    Θ = Array{Float64}(undef, length(result.t), length(x_values))
+    eigenfunctions = [build_function(eigfun, x; expression=Val(false)) for eigfun in eigenfunctions]
+    for (i, t) in enumerate(result.t)
+        for (j, x) in enumerate(x_values)
+            Θ[i, j] = sum(result.u[i][n] * eigenfunctions[n](x) for n in 1:length(eigenfunctions))
+        end
+    end
+    return Θ
+end
+
+function depend_on(var, expr)
+    # 1. Unwrap Symbolics.Num → inner expression
+    if expr isa Symbolics.Num
+        return depend_on(var, Symbolics.unwrap(expr))
+    end
+
+    # 2. If it's exactly the same object, it depends
+    if expr === Symbolics.unwrap(var)
+        return true
+    end
+
+    # 3. Plain number → no dependence
+    if expr isa Number
+        return false
+    end
+
+    # 4. Arrays / tuples → depends if any element depends
+    if expr isa AbstractArray || expr isa Tuple
+        return any(e -> depend_on(var, e), expr)
+    end
+
+    # 5. SymbolicUtils term: check arguments recursively
+    if SymbolicUtils.iscall(expr)
+        return any(arg -> depend_on(var, arg), SymbolicUtils.arguments(expr))
+    end
+
+    # 6. Fallback: if it's some other kind of object, assume no dependence
+    return false
+end
+
+#=
 struct InitialCondition_1D
     at::Number
     eq::Symbolics.Equation
@@ -224,36 +341,6 @@ end
 function at(x, expr, t::Number)
     rule_at = @rule(x => t)
     return SymbolicUtils.Postwalk(rule_at)(expr)
-end
-
-function depend_on(var, expr)
-    # 1. Unwrap Symbolics.Num → inner expression
-    if expr isa Symbolics.Num
-        return depend_on(var, Symbolics.unwrap(expr))
-    end
-
-    # 2. If it's exactly the same object, it depends
-    if expr === Symbolics.unwrap(var)
-        return true
-    end
-
-    # 3. Plain number → no dependence
-    if expr isa Number
-        return false
-    end
-
-    # 4. Arrays / tuples → depends if any element depends
-    if expr isa AbstractArray || expr isa Tuple
-        return any(e -> depend_on(var, e), expr)
-    end
-
-    # 5. SymbolicUtils term: check arguments recursively
-    if SymbolicUtils.iscall(expr)
-        return any(arg -> depend_on(var, arg), SymbolicUtils.arguments(expr))
-    end
-
-    # 6. Fallback: if it's some other kind of object, assume no dependence
-    return false
 end
 
 function isparallel(var1, var2)
@@ -678,4 +765,5 @@ function Recover(pde, result, eigenfunctions, x_values)
     return Θ
 end
 
+=#
 end # module GITT

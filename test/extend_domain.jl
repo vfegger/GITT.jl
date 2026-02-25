@@ -5,7 +5,7 @@ include("../src/extend_domain.jl")
 
 
 @testset "Extend DomainSets.jl functionality" begin
-    D1 = DomainSets.UnitInterval()
+    D1 = DomainSets.Interval(0, 1)
     faces, normals = normed_boundary(D1)
     @test length(faces) == 2
     @test length(normals) == 2
@@ -14,7 +14,8 @@ include("../src/extend_domain.jl")
         [-1.0],
         [1.0]
     ]
-    for n in expected_normals
+    
+    for n in expected_normals 
         @test n in normals
     end
     
