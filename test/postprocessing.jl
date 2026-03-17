@@ -8,7 +8,15 @@ using QuadGK
 using Roots
 using LaTeXStrings
 
-font(family="Computer Modern", pointsize=12)
+default(
+    fontfamily = "Computer Modern",
+    size = (700, 450),   # larger canvas
+    titlefontsize = 22,
+    guidefontsize = 20,
+    tickfontsize = 16,
+    legendfontsize = 16,
+    linewidth = 2.5
+)
 
 # Create graph
 x = range(0, stop=1, length=100)
@@ -21,7 +29,7 @@ k = 54.0
 hinf = 1000.0
 
 # Find the first 5 eigenvalues
-ν(n) = (n - 0.5) * π / (zL - z0)
+ν(n) = n * π / (zL - z0)
 Z(x, n) = cos(ν(n) * x)
 
 # Find the first 5 eigenvalues of k * μ * besselj1(μ * rN) = hinf * besselj0(μ * rN)
@@ -37,8 +45,8 @@ eigvals = [find_zero(μ -> eq(μ), (μ_arr[i], μ_arr[i+1]), Bisection()) for i 
 R(r, m) = besselj0(μ(m) * r)
 
 # Plot the first 5 eigenfunctions
-plot(x, [Z.(x, n) for n in 1:5], label=["n=1" "n=2" "n=3" "n=4" "n=5"], title="Eigenfunctions Z(x, n)", xlabel="x", ylabel="Z", legend=:topright)
+plot(x, [Z.(x, n) for n in 0:4], label=[L"n=0" L"n=1" L"n=2" L"n=3" L"n=4"], title=L"Eigenfunctions $Z(x, n)$", xlabel=L"x", ylabel=L"Z", legend=:topright)
 savefig("eigenfunctions_Z.pdf") 
 
-plot(x, [R.(x, m) for m in 1:5], label=["m=1" "m=2" "m=3" "m=4" "m=5"], title="Eigenfunctions R(r, m)", xlabel="r", ylabel="R", legend=:topright)
+plot(x, [R.(x, m) for m in 1:5], label=[L"m=1" L"m=2" L"m=3" L"m=4" L"m=5"], title=L"Eigenfunctions $R(r, m)$", xlabel=L"r", ylabel=L"R", legend=:topright)
 savefig("eigenfunctions_R.pdf")
