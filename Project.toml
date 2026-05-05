@@ -4,8 +4,10 @@ version = "0.1.0"
 authors = ["vfegger <vitor.egger@gmail.com>"]
 
 [deps]
+BoundaryValueDiffEq = "764a87c0-6b3e-53db-9096-fe964310641d"
 DifferentialEquations = "0c46a032-eb83-5123-abaf-570d42b7fbaa"
 DomainSets = "5b8099bc-c8ec-5219-889f-1d9e522a28bf"
+GaussQuadrature = "d54b0c1a-921d-58e0-8e36-89d8069c0969"
 HCubature = "19dc6840-f33b-545b-b366-655c7e3ffd49"
 IntervalSets = "8197267c-284f-5f27-9208-e0e47529a953"
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
@@ -23,8 +25,10 @@ SymbolicUtils = "d1185830-fcd6-423d-90d6-eec64667417b"
 Symbolics = "0c5d862f-8b57-4792-8d23-62f2024744c7"
 
 [compat]
+BoundaryValueDiffEq = "5.19.1"
 DifferentialEquations = "7.17.0"
 DomainSets = "0.7.16"
+GaussQuadrature = "0.5.8"
 HCubature = "1.8.0"
 IntervalSets = "0.7.12"
 JLD2 = "0.6.3"

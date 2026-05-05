@@ -37,9 +37,16 @@ using QuadGK
     @test β_evaluated(0.0) ≈ β
     @test φ_evaluated(0.0) ≈ φ
 
+
+    @variables g1(..) g2(..)
+    function g(t, x, u)
+        return Dₓ(g2(x) * Dₓ(u(t, x)))
+    end
+    
     terms = Dict{Symbol,Symbolics.Num}(
         :Temporal => Dₜ(u(t, x)),
-        :Diffusion => -Dₓ(Dₓ(u(t, x))),
+        :Diffusion => -Dₓ(0.2 * Dₓ(u(t, x))),
+        :Source => g(t, x, u),
     )
     addition_rules = Dict(
         :Temporal => @rule(Dₜ(u(~t, ~x) + ~f) => Dₜ(u(~t, ~x)) + Dₜ(~f)),
@@ -50,23 +57,29 @@ using QuadGK
     eq = pde()
     display(eq)
     @test typeof(eq) <: Symbolics.Num
-    @test isequal(eq, Dₜ(u(t, x)) - Dₓ(Dₓ(u(t, x))))
+    @test isequal(eq, Dₜ(u(t, x)) - Dₓ(Dₓ(u(t, x))) + g(t, x, u))
 
     transformation_rules = Dict(
+        "G1" => SymbolicUtils.Postwalk(@rule(g1(~~xs) => 2.0 - cos(π * 1.0 * x))),
+        "G2" => SymbolicUtils.Postwalk(@rule(g2(~~xs) => 0.01 * x^2)),
     )
-
-    transformed_eq, transformed_ic = Transform(pde)
+    transformed_eq, transformed_ic = Transform(pde; transformation_rules=transformation_rules)
 
     display(typeof(transformed_eq))
     display(typeof(transformed_ic))
 
     @test typeof(transformed_eq) <: Symbolics.Num
     @test typeof(transformed_ic) <: Symbolics.Num
+    
+    N = 5
+    eigenfunctions = [Symbolics.wrap(sin(π * n * x)) for n in 1:N]
+    eigenvalues = [Symbolics.wrap(-(π * n)^2) for n in 1:N]
 
-    eigenfunctions = [Symbolics.wrap(sin(π * n * x)) for n in 1:5]
-    eigenvalues = [Symbolics.wrap((π * n)^2) for n in 1:5]
-
+    start_time = time_ns()
     result = Solve(transformed_eq, transformed_ic, eigenfunctions, eigenvalues)
+    end_time = time_ns() - start_time
+    
+    println("Time taken to solve the PDE: $(end_time / 1e9) seconds")
 
     Θ = Recover(result, eigenfunctions, range(0, 1, length=100))
     savefig(surface(result.t, range(0, 1, length=100), Θ'), "diffusion_result_surface.pdf")
@@ -86,7 +99,7 @@ exit()
     display(config)
     # Get solution for associated eigenproblem
     N = 5
-    eigenvalues(n) = (π * n)^2
+    eigenvalues(n) = -(π * n)^2
     eigenfunctions(n, x) = sin(π * n * x)
     result = Solve(transformed_problem, config, eigenvalues, eigenfunctions)
     v = Array{Float64}(undef, length(result.t), length(eigenvalues))

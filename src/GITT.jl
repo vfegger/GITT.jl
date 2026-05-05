@@ -132,10 +132,12 @@ function (pde::PDE)()
     return sum(values(pde.terms))
 end
 
-function apply(expr, rules)
+function apply(expr, rules; debug=false)
     result = expr
     for (name, rw) in rules
-        println("Applying rule: $name")
+        if debug
+            println("Applying rule: $name")
+        end
         result_new = Num(0)
         try
             result_new = Symbolics.wrap(rw(Symbolics.value(result)))
@@ -145,19 +147,25 @@ function apply(expr, rules)
             rethrow(err)
         end
         if string(result) != string(result_new)
-            print("\t")
-            show(stdout, MIME"text/plain"(), result_new)
-            println()
+            if debug
+                print("\t")
+                show(stdout, MIME"text/plain"(), result_new)
+                println()
+            end
             result = result_new
         else
-            println("\tRule was not applied.")
+            if debug
+                println("\tRule was not applied.")
+            end
         end
     end
-    println()
+    if debug
+        println()
+    end
     return Symbolics.wrap(result)
 end
 
-function Transform(pde::PDE)
+function Transform(pde::PDE; transformation_rules::Dict{String, <:Any}=Dict())
     # Transform terms in system of differential equations
     t = pde.var_t
     x = pde.var_x
@@ -185,11 +193,12 @@ function Transform(pde::PDE)
     rule_IxDDxy2IxDDyx_0 = @acrule(Iₓ(*(~!a, Dₓ₂(u(~t, ~x)), Ψ(~n, ~x))) => Iₓ(*(~a, Dₓ₂(Ψ(~n, ~x)), u(~t, ~x))))
     rule_IxDDxy2IxDDyx_1 = @acrule(Iₓ(*(~!a0, Dₓ(*(~!a1, Dₓ(u(~t, ~x)))), Ψ(~n, ~x))) => Iₓ(*(~a0, Dₓ(*(~a1, Dₓ(Ψ(~n, ~x)))), u(~t, ~x))))
     rule_DDψ2λψ_0 = @acrule(Dₓ₂(Ψ(~n, ~x)) => λ(~n) * Ψ(~n, ~x))
-    rule_DDψ2λψ_1 = @acrule(Dₓ(*(~!a, Dₓ(u(~t, ~x)))) => λ(~n) * Ψ(~n, ~x))
+    rule_DDψ2λψ_1 = @acrule(Dₓ(*(~!a, Dₓ(Ψ(~n, ~x)))) => λ(~n) * Ψ(~n, ~x))
     rule_TransformF = @acrule(Iₓ(*(~!a::(e -> !any(depend_on.(x, e))), u(~t, ~x), Ψ(~n, ~x), ~~as::(e -> !any(depend_on.(x, e))))) => *(~a, θ(~n, ~t), ~~as...))
     rule_TransformI = @acrule(u(~t, ~x) => Sₙ(*(θ(n, ~t), Ψ(n, ~x))))
-    rule_SAssociativity = @acrule(*(Sₙ(~f), ~~gs::(e -> !any(depend_on.(x, e)))) => Sₙ(*(~f, ~~gs...)))
+    rule_SAssociativity = @acrule(*(Sₙ(~f), ~~gs) => Sₙ(*(~f, ~~gs...)))
     rule_IS2SI = @acrule(Iₓ(Sₙ(~f)) => Sₙ(Iₓ(~f)))
+    rule_IT = @acrule(Iₓ(*(~a::(e -> !any(depend_on.(x, e))), ~~bs)) => *(~a, Iₓ(*(~~bs...))))
 
     rules_AT = [
         ("IS", SymbolicUtils.Postwalk(rule_IS)),
@@ -202,29 +211,42 @@ function Transform(pde::PDE)
         ("TransformI", SymbolicUtils.Postwalk(rule_TransformI)),
         ("SAssociativity", SymbolicUtils.Postwalk(rule_SAssociativity)),
         ("SumIntegral", SymbolicUtils.Postwalk(rule_IS2SI)),
+        ("IT", SymbolicUtils.Postwalk(rule_IT)),
     ]
 
-    transformed_form = apply(expand(Iₓ(eq * Ψ(n, x))), rules_AT)
-    dump(open(joinpath("dump", "transformed_form.txt"), "w"), transformed_form)
-    transformed_initial_condition = apply(expand(Iₓ(initial_condition * Ψ(n, x))), rules_AT)
+    # Apply transformation rules
+    for (name, rule) in transformation_rules
+        push!(rules_AT, (name, rule))
+    end
 
+    transformed_form = apply(expand(Iₓ(eq * Ψ(n, x))), rules_AT; debug=true)
+    dump(open(joinpath("dump", "transformed_form.txt"), "w"), transformed_form)
+    transformed_initial_condition = apply(expand(Iₓ(initial_condition * Ψ(n, x))), rules_AT; debug=true)
+
+    display(transformed_form)
+    display(transformed_initial_condition)
     return transformed_form, transformed_initial_condition
 end
 
 function Solve(equation, initial_condition, eigenfunctions, eigenvalues)
-    @variables n::Integer t x p θ(..) Θ(..)[1:length(eigenfunctions)] Ψ(..) λ(..)
+    N_val = length(eigenfunctions)
+    @variables n::Integer N::Integer t x p θ(..) Θ(..)[1:N_val] Ψ(..) λ(..)
     Dₜ = Symbolics.Differential(t)
     system = Symbolics.Num[]
     ics = Symbolics.Num[]
+    Sₙ = Summation(n ∈ DomainSets.ClosedInterval(1, N))
+    S = Summation(n ∈ DomainSets.ClosedInterval(1, N_val))
     for (i, (eigfun, eigval)) in enumerate(zip(eigenfunctions, eigenvalues))
         rule_eigenfun_i = @acrule(Ψ(~n, ~x) => eigfun)
         rule_eigenval_i = @acrule(λ(~n) => eigval)
         rule_function_i = @acrule(θ(~n, ~t) => Θ(t)[i])
-        rules = Dict("Eigenfun" => SymbolicUtils.Postwalk(rule_eigenfun_i), "Eigenval" => SymbolicUtils.Postwalk(rule_eigenval_i), "Function" => SymbolicUtils.Postwalk(rule_function_i))
+        rule_summation_i = @acrule(Sₙ(~f) => S(~f))
+        rules = Dict("Eigenfun" => SymbolicUtils.Postwalk(rule_eigenfun_i), "Eigenval" => SymbolicUtils.Postwalk(rule_eigenval_i), "Function" => SymbolicUtils.Postwalk(rule_function_i), "Summation" => SymbolicUtils.Postwalk(rule_summation_i))
         eq = apply(equation, rules)
         ic = apply(initial_condition, rules)
         eq_lhs = Symbolics.coeff(eq, Dₜ(Θ(t)[i]))
         eq_rhs = Symbolics.expand((eq - eq_lhs * Dₜ(Θ(t)[i])) / eq_lhs)
+        eq_rhs = Symbolics.expand_derivatives(eq_rhs)
 
         push!(system, eq_rhs)
         push!(ics, ic)
@@ -242,17 +264,17 @@ function Solve(equation, initial_condition, eigenfunctions, eigenvalues)
     @assert typeof(system) <: Vector{Symbolics.Num} "System of equations after expanding integrals is not a vector of symbolic expressions. Got: $(typeof(system))"
     @assert typeof(ics) <: Vector{Symbolics.Num} "Initial conditions after expanding integrals is not a vector of symbolic expressions. Got: $(typeof(ics))"
 
-    display(system)
-    display(ics)
+    #display(system)
+    #display(ics)
     eq_expr = first(build_function(system, Θ(t), p, t; expression=Val(false)))
     ic_expr = first(build_function(ics; expression=Val(false)))
 
-    display(eq_expr)
-    display(ic_expr)
+    #display(eq_expr)
+    #display(ic_expr)
 
     tspan = (0.0, 1.0)
     prob = DifferentialEquations.ODEProblem(eq_expr, ic_expr(), tspan)
-    result = DifferentialEquations.solve(prob, DifferentialEquations.Rosenbrock23())
+    result = DifferentialEquations.solve(prob, DifferentialEquations.TRBDF2())
 
     return result
 end
